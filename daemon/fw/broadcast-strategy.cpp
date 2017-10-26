@@ -23,61 +23,44 @@
  * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "best-route-strategy.hpp"
+#include "broadcast-strategy.hpp"
 #include "algorithm.hpp"
 
 namespace nfd {
 namespace fw {
 
-BestRouteStrategyBase::BestRouteStrategyBase(Forwarder& forwarder)
+//const Name BroadcastStrategy::STRATEGY_NAME("ndn:/localhost/nfd/strategy/broadcast/%FD%01");
+NFD_REGISTER_STRATEGY(BroadcastStrategy);
+
+BroadcastStrategy::BroadcastStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
 {
+  this->setInstanceName(makeInstanceName(name, getStrategyName()));
 }
 
 void
-BestRouteStrategyBase::afterReceiveInterest(const Face& inFace, const Interest& interest,
-                                            const shared_ptr<pit::Entry>& pitEntry)
+BroadcastStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
+                                        const shared_ptr<pit::Entry>& pitEntry)
 {
-  if (hasPendingOutRecords(*pitEntry)) {
-    // not a new Interest, don't forward
-    return;
-  }
-
   const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
   const fib::NextHopList& nexthops = fibEntry.getNextHops();
 
   for (fib::NextHopList::const_iterator it = nexthops.begin(); it != nexthops.end(); ++it) {
     Face& outFace = it->getFace();
-    if (!wouldViolateScope(inFace, interest, outFace) &&
-        canForwardToLegacy(*pitEntry, outFace)) {
+    if (!wouldViolateScope(inFace, interest, outFace)) {
       this->sendInterest(pitEntry, outFace, interest);
-      return;
     }
   }
 
-  this->rejectPendingInterest(pitEntry);
-}
-
-NFD_REGISTER_STRATEGY(BestRouteStrategy);
-
-BestRouteStrategy::BestRouteStrategy(Forwarder& forwarder, const Name& name)
-  : BestRouteStrategyBase(forwarder)
-{
-  ParsedInstanceName parsed = parseInstanceName(name);
-  if (!parsed.parameters.empty()) {
-    BOOST_THROW_EXCEPTION(std::invalid_argument("BestRouteStrategy does not accept parameters"));
+  if (!hasPendingOutRecords(*pitEntry)) {
+    this->rejectPendingInterest(pitEntry);
   }
-  if (parsed.version && *parsed.version != getStrategyName()[-1].toVersion()) {
-    BOOST_THROW_EXCEPTION(std::invalid_argument(
-      "BestRouteStrategy does not support version " + std::to_string(*parsed.version)));
-  }
-  this->setInstanceName(makeInstanceName(name, getStrategyName()));
 }
 
 const Name&
-BestRouteStrategy::getStrategyName()
+BroadcastStrategy::getStrategyName()
 {
-  static Name strategyName("/localhost/nfd/strategy/best-route/%FD%01");
+  static Name strategyName("/localhost/nfd/strategy/broadcast/%FD%01");
   return strategyName;
 }
 

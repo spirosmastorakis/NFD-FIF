@@ -81,7 +81,7 @@ void
 AccessStrategy::afterReceiveNewInterest(const Face& inFace, const Interest& interest,
                                         const shared_ptr<pit::Entry>& pitEntry)
 {
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
   Name miName;
   MtInfo* mi = nullptr;
   std::tie(miName, mi) = this->findPrefixMeasurements(*pitEntry);
@@ -117,7 +117,7 @@ void
 AccessStrategy::afterReceiveRetxInterest(const Face& inFace, const Interest& interest,
                                          const shared_ptr<pit::Entry>& pitEntry)
 {
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
   NFD_LOG_DEBUG(interest << " interestFrom " << inFace.getId() << " retx-forward");
   this->multicast(inFace, interest, pitEntry, fibEntry);
 }
@@ -185,7 +185,7 @@ AccessStrategy::afterRtoTimeout(weak_ptr<pit::Entry> pitWeak, FaceId inFaceId, F
 
   const Interest& interest = inRecord->getInterest();
 
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
 
   NFD_LOG_DEBUG(pitEntry->getInterest() << " timeoutFrom " << firstOutFaceId <<
                 " multicast-except " << firstOutFaceId);

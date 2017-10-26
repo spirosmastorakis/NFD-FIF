@@ -144,6 +144,8 @@ Strategy::Strategy(Forwarder& forwarder)
   , m_forwarder(forwarder)
   , m_measurements(m_forwarder.getMeasurements(), m_forwarder.getStrategyChoice(), *this)
 {
+  results.nResultsToReturn = NUM_OF_RESULTS;
+  strcpy(filename, "/Users/spyros/Downloads/word2vec/trunk/vectors.bin");
 }
 
 Strategy::~Strategy() = default;
@@ -193,7 +195,7 @@ Strategy::sendNacks(const shared_ptr<pit::Entry>& pitEntry, const lp::NackHeader
 }
 
 const fib::Entry&
-Strategy::lookupFib(const pit::Entry& pitEntry) const
+Strategy::lookupFib(const pit::Entry& pitEntry, shared_ptr<Name> name) const
 {
   const Fib& fib = m_forwarder.getFib();
 
@@ -201,9 +203,16 @@ Strategy::lookupFib(const pit::Entry& pitEntry) const
   // has forwarding hint?
   if (interest.getForwardingHint().empty()) {
     // FIB lookup with Interest name
-    const fib::Entry& fibEntry = fib.findLongestPrefixMatch(pitEntry);
-    NFD_LOG_TRACE("lookupFib noForwardingHint found=" << fibEntry.getPrefix());
-    return fibEntry;
+    if (name == nullptr) {
+      const fib::Entry& fibEntry = fib.findLongestPrefixMatch(pitEntry);
+      NFD_LOG_TRACE("lookupFib noForwardingHint found=" << fibEntry.getPrefix());
+      return fibEntry;
+    }
+    else {
+      const fib::Entry&fibEntry = fib.findLongestPrefixMatch(*name);
+      NFD_LOG_TRACE("lookupFib noForwardingHint found=" << fibEntry.getPrefix());
+      return fibEntry;
+    }
   }
 
   const DelegationList& fh = interest.getForwardingHint();

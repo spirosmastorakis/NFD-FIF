@@ -29,6 +29,11 @@
 #include "forwarder.hpp"
 #include "table/measurements-accessor.hpp"
 
+#include "distance_lib.h"
+
+#define NUM_OF_RESULTS 5
+#define COMP_INDEX_FUZZY 1
+
 namespace nfd {
 namespace fw {
 
@@ -235,7 +240,7 @@ protected: // accessors
   /** \brief performs a FIB lookup, considering Link object if present
    */
   const fib::Entry&
-  lookupFib(const pit::Entry& pitEntry) const;
+  lookupFib(const pit::Entry& pitEntry, shared_ptr<Name> name) const;
 
   MeasurementsAccessor&
   getMeasurements()
@@ -291,6 +296,10 @@ protected: // instance name
   {
     m_name = name;
   }
+
+  char filename[100];
+  char word[100];
+  resultFormat results;
 
 private: // registry
   typedef std::function<unique_ptr<Strategy>(Forwarder& forwarder, const Name& strategyName)> CreateFunc;

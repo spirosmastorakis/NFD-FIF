@@ -23,20 +23,20 @@
  * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "best-route-strategy2.hpp"
+#include "fuzzy-strategy.hpp"
 #include "algorithm.hpp"
 #include "core/logger.hpp"
 
 namespace nfd {
 namespace fw {
 
-NFD_LOG_INIT("BestRouteStrategy2");
-NFD_REGISTER_STRATEGY(BestRouteStrategy2);
+NFD_LOG_INIT("FuzzyStrategy");
+NFD_REGISTER_STRATEGY(FuzzyStrategy);
 
-const time::milliseconds BestRouteStrategy2::RETX_SUPPRESSION_INITIAL(10);
-const time::milliseconds BestRouteStrategy2::RETX_SUPPRESSION_MAX(250);
+const time::milliseconds FuzzyStrategy::RETX_SUPPRESSION_INITIAL(10);
+const time::milliseconds FuzzyStrategy::RETX_SUPPRESSION_MAX(250);
 
-BestRouteStrategy2::BestRouteStrategy2(Forwarder& forwarder, const Name& name)
+FuzzyStrategy::FuzzyStrategy(Forwarder& forwarder, const Name& name)
   : Strategy(forwarder)
   , ProcessNackTraits(this)
   , m_retxSuppression(RETX_SUPPRESSION_INITIAL,
@@ -55,9 +55,9 @@ BestRouteStrategy2::BestRouteStrategy2(Forwarder& forwarder, const Name& name)
 }
 
 const Name&
-BestRouteStrategy2::getStrategyName()
+FuzzyStrategy::getStrategyName()
 {
-  static Name strategyName("/localhost/nfd/strategy/best-route/%FD%05");
+  static Name strategyName("/localhost/nfd/strategy/fuzzy/%FD%05");
   return strategyName;
 }
 
@@ -121,7 +121,7 @@ findEligibleNextHopWithEarliestOutRecord(const Face& inFace, const Interest& int
 }
 
 void
-BestRouteStrategy2::afterReceiveInterest(const Face& inFace, const Interest& interest,
+FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
                                          const shared_ptr<pit::Entry>& pitEntry)
 {
   RetxSuppressionResult suppression = m_retxSuppression.decidePerPitEntry(*pitEntry);
@@ -131,61 +131,79 @@ BestRouteStrategy2::afterReceiveInterest(const Face& inFace, const Interest& int
     return;
   }
 
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
-  const fib::NextHopList& nexthops = fibEntry.getNextHops();
-  fib::NextHopList::const_iterator it = nexthops.end();
+  strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+  // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
+  distance(filename, word, (void*)&results);
 
-  if (suppression == RetxSuppressionResult::NEW) {
-    // forward to nexthop with lowest cost except downstream
-    it = std::find_if(nexthops.begin(), nexthops.end(),
-      bind(&isNextHopEligible, cref(inFace), interest, _1, pitEntry,
-           false, time::steady_clock::TimePoint::min()));
+  bool resultFound = false;
 
-    if (it == nexthops.end()) {
-      NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " noNextHop");
+  for (int i = 0; i < NUM_OF_RESULTS; i++) {
+    // prepare name to be fuzzy matched
+    shared_ptr<Name> fuzzyName = make_shared<Name>(interest.getName().getPrefix(COMP_INDEX_FUZZY));
+    fuzzyName->append(results.resultsArray[i].resultValue);
+    for (int j = COMP_INDEX_FUZZY + 1; j < interest.getName().size(); j++) {
+      fuzzyName->append(interest.getName().get(j));
+    }
+    NFD_LOG_DEBUG("Fuzzy Matching for name " << *fuzzyName);
+    const fib::Entry& fibEntry = this->lookupFib(*pitEntry, fuzzyName);
+    const fib::NextHopList& nexthops = fibEntry.getNextHops();
+    fib::NextHopList::const_iterator it = nexthops.end();
 
-      lp::NackHeader nackHeader;
-      nackHeader.setReason(lp::NackReason::NO_ROUTE);
-      this->sendNack(pitEntry, inFace, nackHeader);
+    if (suppression == RetxSuppressionResult::NEW) {
+      // forward to nexthop with lowest cost except downstream
+      it = std::find_if(nexthops.begin(), nexthops.end(),
+        bind(&isNextHopEligible, cref(inFace), interest, _1, pitEntry,
+             false, time::steady_clock::TimePoint::min()));
 
-      this->rejectPendingInterest(pitEntry);
+      if (it == nexthops.end()) {
+        continue;
+      }
+
+      resultFound = true;
+      Face& outFace = it->getFace();
+      this->sendInterest(pitEntry, outFace, interest);
+      NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
+                             << " newPitEntry-to=" << outFace.getId());
       return;
     }
+    else {
+      // find an unused upstream with lowest cost except downstream
+      it = std::find_if(nexthops.begin(), nexthops.end(),
+                        bind(&isNextHopEligible, cref(inFace), interest, _1, pitEntry,
+                             true, time::steady_clock::now()));
+      if (it != nexthops.end()) {
+        Face& outFace = it->getFace();
+        this->sendInterest(pitEntry, outFace, interest);
+        NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
+                               << " retransmit-unused-to=" << outFace.getId());
+        return;
+      }
 
-    Face& outFace = it->getFace();
-    this->sendInterest(pitEntry, outFace, interest);
-    NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
-                           << " newPitEntry-to=" << outFace.getId());
-    return;
+      // find an eligible upstream that is used earliest
+      it = findEligibleNextHopWithEarliestOutRecord(inFace, interest, nexthops, pitEntry);
+      if (it == nexthops.end()) {
+        NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " retransmitNoNextHop");
+      }
+      else {
+        Face& outFace = it->getFace();
+        this->sendInterest(pitEntry, outFace, interest);
+        NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
+                               << " retransmit-retry-to=" << outFace.getId());
+      }
+    }
   }
 
-  // find an unused upstream with lowest cost except downstream
-  it = std::find_if(nexthops.begin(), nexthops.end(),
-                    bind(&isNextHopEligible, cref(inFace), interest, _1, pitEntry,
-                         true, time::steady_clock::now()));
-  if (it != nexthops.end()) {
-    Face& outFace = it->getFace();
-    this->sendInterest(pitEntry, outFace, interest);
-    NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
-                           << " retransmit-unused-to=" << outFace.getId());
-    return;
-  }
+  NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " noNextHop");
 
-  // find an eligible upstream that is used earliest
-  it = findEligibleNextHopWithEarliestOutRecord(inFace, interest, nexthops, pitEntry);
-  if (it == nexthops.end()) {
-    NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " retransmitNoNextHop");
-  }
-  else {
-    Face& outFace = it->getFace();
-    this->sendInterest(pitEntry, outFace, interest);
-    NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
-                           << " retransmit-retry-to=" << outFace.getId());
-  }
+  lp::NackHeader nackHeader;
+  nackHeader.setReason(lp::NackReason::NO_ROUTE);
+  this->sendNack(pitEntry, inFace, nackHeader);
+
+  this->rejectPendingInterest(pitEntry);
 }
 
 void
-BestRouteStrategy2::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
+FuzzyStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                      const shared_ptr<pit::Entry>& pitEntry)
 {
   this->processNack(inFace, nack, pitEntry);

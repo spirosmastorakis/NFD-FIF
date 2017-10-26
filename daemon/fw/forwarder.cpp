@@ -33,6 +33,8 @@
 #include "face/null-face.hpp"
 #include <boost/random/uniform_int_distribution.hpp>
 
+#include "tensorflow/c/c_api.h"
+
 namespace nfd {
 
 NFD_LOG_INIT("Forwarder");
@@ -51,6 +53,7 @@ Forwarder::Forwarder()
   , m_strategyChoice(*this)
   , m_csFace(face::makeNullFace(FaceUri("contentstore://")))
 {
+  //NFD_LOG_DEBUG(TF_Version());
   getFaceTable().addReserved(m_csFace, face::FACEID_CONTENT_STORE);
 
   m_faceTable.afterAdd.connect([this] (Face& face) {
@@ -358,10 +361,10 @@ Forwarder::onIncomingData(Face& inFace, const Data& data)
 
   // foreach pending downstream
   for (Face* pendingDownstream : pendingDownstreams) {
-    if (pendingDownstream->getId() == inFace.getId() &&
-        pendingDownstream->getLinkType() != ndn::nfd::LINK_TYPE_AD_HOC) {
-      continue;
-    }
+    //if (pendingDownstream->getId() == inFace.getId() &&
+    //    pendingDownstream->getLinkType() != ndn::nfd::LINK_TYPE_AD_HOC) {
+    //  continue;
+    // }
     // goto outgoing Data pipeline
     this->onOutgoingData(data, *pendingDownstream);
   }

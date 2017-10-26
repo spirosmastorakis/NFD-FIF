@@ -66,7 +66,7 @@ void
 MulticastStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
                                         const shared_ptr<pit::Entry>& pitEntry)
 {
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
   const fib::NextHopList& nexthops = fibEntry.getNextHops();
 
   int nEligibleNextHops = 0;

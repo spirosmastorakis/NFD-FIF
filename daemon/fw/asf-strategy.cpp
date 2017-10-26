@@ -80,7 +80,7 @@ AsfStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
     return;
   }
 
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
   const fib::NextHopList& nexthops = fibEntry.getNextHops();
 
   if (nexthops.size() == 0) {

@@ -61,7 +61,7 @@ void
 NccStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
                                   const shared_ptr<pit::Entry>& pitEntry)
 {
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
   const fib::NextHopList& nexthops = fibEntry.getNextHops();
   if (nexthops.size() == 0) {
     this->rejectPendingInterest(pitEntry);
@@ -147,7 +147,7 @@ NccStrategy::doPropagate(FaceId inFaceId, weak_ptr<pit::Entry> pitEntryWeak)
     return;
   }
   const Interest& interest = inRecord->getInterest();
-  const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
+  const fib::Entry& fibEntry = this->lookupFib(*pitEntry, nullptr);
 
   PitEntryInfo* pitEntryInfo = pitEntry->getStrategyInfo<PitEntryInfo>();
   // pitEntryInfo is guaranteed to exist here, because doPropagate is triggered
