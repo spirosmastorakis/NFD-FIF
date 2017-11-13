@@ -27,6 +27,8 @@
 #include "algorithm.hpp"
 #include "core/logger.hpp"
 
+#include "ns3/ndnSIM/model/ndn-fuzzy-common.hpp"
+
 namespace nfd {
 namespace fw {
 
@@ -45,13 +47,16 @@ FuzzyStrategy::FuzzyStrategy(Forwarder& forwarder, const Name& name)
 {
   ParsedInstanceName parsed = parseInstanceName(name);
   if (!parsed.parameters.empty()) {
-    BOOST_THROW_EXCEPTION(std::invalid_argument("BestRouteStrategy2 does not accept parameters"));
+    BOOST_THROW_EXCEPTION(std::invalid_argument("FuzzyStrategy does not accept parameters"));
   }
   if (parsed.version && *parsed.version != getStrategyName()[-1].toVersion()) {
     BOOST_THROW_EXCEPTION(std::invalid_argument(
       "BestRouteStrategy2 does not support version " + std::to_string(*parsed.version)));
   }
   this->setInstanceName(makeInstanceName(name, getStrategyName()));
+
+  prepare_model(filename, (void*)&m_forwarder.initStruct);
+  num_matches = 0;
 }
 
 const Name&
@@ -122,7 +127,7 @@ findEligibleNextHopWithEarliestOutRecord(const Face& inFace, const Interest& int
 
 void
 FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
-                                         const shared_ptr<pit::Entry>& pitEntry)
+                                    const shared_ptr<pit::Entry>& pitEntry)
 {
   RetxSuppressionResult suppression = m_retxSuppression.decidePerPitEntry(*pitEntry);
   if (suppression == RetxSuppressionResult::SUPPRESS) {
@@ -131,16 +136,29 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
     return;
   }
 
-  strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
-  // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
-  distance(filename, word, (void*)&results);
+  // try exact match first
+  const fib::Entry& exactFibEntry = this->lookupFib(*pitEntry, nullptr);
+  const fib::NextHopList& exactNexthops = exactFibEntry.getNextHops();
+  fib::NextHopList::const_iterator exactIt = exactNexthops.end();
+
+  exactIt = std::find_if(exactNexthops.begin(), exactNexthops.end(),
+    bind(&isNextHopEligible, cref(inFace), interest, _1, pitEntry,
+         false, time::steady_clock::TimePoint::min()));
+
+  if (exactIt != exactNexthops.end()) {
+    Face& outFace = exactIt->getFace();
+    this->sendInterest(pitEntry, outFace, interest);
+    NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
+                           << " newPitEntry-to=" << outFace.getId());
+    return;
+  }
 
   bool resultFound = false;
 
-  for (int i = 0; i < NUM_OF_RESULTS; i++) {
+  for (int i = 0; i < num_matches; i++) {
     // prepare name to be fuzzy matched
     shared_ptr<Name> fuzzyName = make_shared<Name>(interest.getName().getPrefix(COMP_INDEX_FUZZY));
-    fuzzyName->append(results.resultsArray[i].resultValue);
+    fuzzyName->append(m_forwarder.results.resultsArray[i].resultValue);
     for (int j = COMP_INDEX_FUZZY + 1; j < interest.getName().size(); j++) {
       fuzzyName->append(interest.getName().get(j));
     }
@@ -207,6 +225,20 @@ FuzzyStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                                      const shared_ptr<pit::Entry>& pitEntry)
 {
   this->processNack(inFace, nack, pitEntry);
+}
+
+void
+FuzzyStrategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches)
+{
+  NFD_LOG_DEBUG("beforeCSLookup interest name=" << interest.getName());
+  strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+  // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
+  num_matches = distance_no_open((void*)&m_forwarder.initStruct, word, (void*)&m_forwarder.results, THRESHOLD);
+  fuzzyMatches = num_matches;
+  // std::cerr << "Interest name " << interest.getName().toUri() << std::endl;
+  // std::cerr << "Num_matches " << num_matches << std::endl;
+  // for (int i = 0; i < num_matches; i++)
+  //   std::cerr << "Fuzzy Prefix " << results.resultsArray[i].resultValue << std::endl;
 }
 
 } // namespace fw

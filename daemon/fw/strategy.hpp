@@ -31,9 +31,6 @@
 
 #include "distance_lib.h"
 
-#define NUM_OF_RESULTS 5
-#define COMP_INDEX_FUZZY 1
-
 namespace nfd {
 namespace fw {
 
@@ -186,6 +183,9 @@ public: // triggers
   afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                    const shared_ptr<pit::Entry>& pitEntry);
 
+  virtual void
+  beforeCSLookup(const Interest& interest, int& fuzzyMatches);
+
 protected: // actions
   /** \brief send Interest to outFace
    *  \param pitEntry PIT entry
@@ -299,7 +299,7 @@ protected: // instance name
 
   char filename[100];
   char word[100];
-  resultFormat results;
+  int num_matches;
 
 private: // registry
   typedef std::function<unique_ptr<Strategy>(Forwarder& forwarder, const Name& strategyName)> CreateFunc;
@@ -315,14 +315,14 @@ protected: // accessors
   signal::Signal<FaceTable, Face&>& afterAddFace;
   signal::Signal<FaceTable, Face&>& beforeRemoveFace;
 
-private: // instance fields
-  Name m_name;
-
   /** \brief reference to the forwarder
    *
    *  Triggers can access forwarder indirectly via actions.
    */
   Forwarder& m_forwarder;
+
+private: // instance fields
+  Name m_name;
 
   MeasurementsAccessor m_measurements;
 };

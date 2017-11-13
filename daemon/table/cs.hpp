@@ -86,6 +86,14 @@ public:
        const MissCallback& missCallback) const;
 
   void
+  fuzzyFind(const Interest& interest,
+            const int& num_matches,
+            int fuzzy_comp_index,
+            void* results_void,
+            const HitCallback& hitCallback,
+            const MissCallback& missCallback) const;
+
+  void
   erase(const Name& exactName)
   {
     BOOST_ASSERT_MSG(false, "not implemented");

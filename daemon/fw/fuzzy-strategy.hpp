@@ -30,6 +30,8 @@
 #include "process-nack-traits.hpp"
 #include "retx-suppression-exponential.hpp"
 
+#define THRESHOLD 0.4
+
 namespace nfd {
 namespace fw {
 
@@ -67,6 +69,9 @@ public:
   void
   afterReceiveNack(const Face& inFace, const lp::Nack& nack,
                    const shared_ptr<pit::Entry>& pitEntry) override;
+
+  virtual void
+  beforeCSLookup(const Interest& interest, int& fuzzyMatches) override;
 
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   static const time::milliseconds RETX_SUPPRESSION_INITIAL;

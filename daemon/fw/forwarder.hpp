@@ -40,6 +40,7 @@
 #include "table/network-region-table.hpp"
 
 #include "ns3/ndnSIM/model/cs/ndn-content-store.hpp"
+#include "ns3/ndnSIM/model/ndn-fuzzy-common.hpp"
 
 namespace nfd {
 
@@ -104,6 +105,9 @@ public: // faces and policies
     BOOST_ASSERT(policy != nullptr);
     m_unsolicitedDataPolicy = std::move(policy);
   }
+
+  struct initStruct initStruct;
+  resultFormat results;
 
 public: // forwarding entrypoints and tables
   /** \brief start incoming Interest processing
@@ -322,6 +326,8 @@ private:
   shared_ptr<Face>   m_csFace;
 
   ns3::Ptr<ns3::ndn::ContentStore> m_csFromNdnSim;
+
+  int m_fuzzyMatches;
 
   // allow Strategy (base class) to enter pipelines
   friend class fw::Strategy;

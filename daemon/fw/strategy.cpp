@@ -144,7 +144,7 @@ Strategy::Strategy(Forwarder& forwarder)
   , m_forwarder(forwarder)
   , m_measurements(m_forwarder.getMeasurements(), m_forwarder.getStrategyChoice(), *this)
 {
-  results.nResultsToReturn = NUM_OF_RESULTS;
+  num_matches = -1;
   strcpy(filename, "/Users/spyros/Downloads/word2vec/trunk/vectors.bin");
 }
 
@@ -156,6 +156,13 @@ Strategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
 {
   NFD_LOG_DEBUG("beforeSatisfyInterest pitEntry=" << pitEntry->getName() <<
                 " inFace=" << inFace.getId() << " data=" << data.getName());
+}
+
+void
+Strategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches)
+{
+  NFD_LOG_DEBUG("beforeCSLookup interest name=" << interest.getName());
+  fuzzyMatches = -1;
 }
 
 void
