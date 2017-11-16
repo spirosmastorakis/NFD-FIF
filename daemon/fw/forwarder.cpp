@@ -143,18 +143,25 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
   bool isPending = inRecords.begin() != inRecords.end();
   if (!isPending) {
     if (m_csFromNdnSim == nullptr) {
-      // dispatch to strategy: before CS lookup
-      this->dispatchToStrategy(*pitEntry,
-        [&] (fw::Strategy& strategy) { strategy.beforeCSLookup(interest, m_fuzzyMatches); });
-      if (m_fuzzyMatches == -1)
+      if (!interest.getForwardingHint().empty()) {
+        NFD_LOG_DEBUG("Interest=" << interest.getName() << " has forwarding hint with name=" << (interest.getForwardingHint())[0].name);
         m_cs.find(interest,
                   bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
                   bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
+      }
       else {
-        //fuzzy CS lookup
-        m_cs.fuzzyFind(interest, m_fuzzyMatches, COMP_INDEX_FUZZY, (void*)&results,
-                  bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
-                  bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
+        // dispatch to strategy: before CS lookup
+        this->dispatchToStrategy(*pitEntry,
+          [&] (fw::Strategy& strategy) { strategy.beforeCSLookup(interest, m_fuzzyMatches); });
+        if (m_fuzzyMatches == -1)
+          m_cs.find(interest,
+                    bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
+                    bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
+        else
+          //fuzzy CS lookup
+          m_cs.fuzzyFind(interest, m_fuzzyMatches, COMP_INDEX_FUZZY, (void*)&results,
+                    bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
+                    bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
       }
     }
     else {

@@ -145,6 +145,7 @@ Cs::find(const Interest& interest,
     return;
   }
   NFD_LOG_DEBUG("  matching " << match->getName());
+  // std::cerr << "CS non-fuzzy match for " << match->getName() << std::endl;
   m_policy->beforeUse(match);
   hitCallback(interest, match->getData());
 }
@@ -180,6 +181,7 @@ Cs::fuzzyFind(const Interest& interest,
   }
 
   if (match != last) {
+    // std::cerr << "CS fuzzy match for " << match->getName() << std::endl;
     NFD_LOG_DEBUG("  matching " << match->getName());
     m_policy->beforeUse(match);
     hitCallback(interest, match->getData());

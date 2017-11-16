@@ -149,9 +149,12 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
     Face& outFace = exactIt->getFace();
     this->sendInterest(pitEntry, outFace, interest);
     NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
-                           << " newPitEntry-to=" << outFace.getId());
+                           << " exact match with newPitEntry-to=" << outFace.getId());
     return;
   }
+
+  if (!interest.getForwardingHint().empty())
+    beforeCSLookup(interest, num_matches);
 
   bool resultFound = false;
 
@@ -179,6 +182,11 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
 
       resultFound = true;
       Face& outFace = it->getFace();
+      Delegation del;
+      del.name = Name(*fuzzyName);
+      del.preference = 1;
+      DelegationList list({del});
+      const_cast<Interest&>(interest).setForwardingHint(list);
       this->sendInterest(pitEntry, outFace, interest);
       NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
                              << " newPitEntry-to=" << outFace.getId());

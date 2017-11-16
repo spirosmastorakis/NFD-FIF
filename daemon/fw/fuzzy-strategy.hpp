@@ -30,8 +30,6 @@
 #include "process-nack-traits.hpp"
 #include "retx-suppression-exponential.hpp"
 
-#define THRESHOLD 0.4
-
 namespace nfd {
 namespace fw {
 
