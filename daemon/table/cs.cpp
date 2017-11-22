@@ -30,6 +30,7 @@
 #include <ndn-cxx/lp/tags.hpp>
 
 #include "ns3/ndnSIM/model/ndn-fuzzy-common.hpp"
+#include "distance_lib.h"
 
 namespace nfd {
 namespace cs {
@@ -222,6 +223,92 @@ Cs::fuzzyFind(const Interest& interest,
     hitCallback(interest, match->getData());
   }
   missCallback(interest);
+}
+
+bool
+Cs::fuzzyFindRetry(const Interest& interest,
+                   const int& num_matches,
+                   int fuzzy_comp_index,
+                   void* results_void,
+                   int matchIndex,
+                   void* initStruct_void,
+                   const HitCallback& hitCallback,
+                   const MissCallback& missCallback) const
+{
+  BOOST_ASSERT(static_cast<bool>(hitCallback));
+  BOOST_ASSERT(static_cast<bool>(missCallback));
+
+  //check first whether we have a match for Interest name
+  const Name& intPrefix = interest.getName();
+  bool isRightmost = interest.getChildSelector() == 1;
+  NFD_LOG_DEBUG("find " << intPrefix << (isRightmost ? " R" : " L"));
+
+  iterator first = m_table.lower_bound(intPrefix);
+  iterator last = m_table.end();
+  if (intPrefix.size() > 0) {
+    last = m_table.lower_bound(intPrefix.getSuccessor());
+  }
+
+  iterator match = last;
+  if (isRightmost) {
+    match = this->findRightmost(interest, first, last);
+  }
+  else {
+    match = this->findLeftmost(interest, first, last);
+  }
+
+  if (match != last) {
+    // std::cerr << "CS fuzzy match for " << match->getName() << std::endl;
+    NFD_LOG_DEBUG("  matching " << match->getName());
+    m_policy->beforeUse(match);
+    hitCallback(interest, match->getData());
+    return true;
+  }
+
+  NFD_LOG_DEBUG("  no-match, moving to fuzzy matches");
+
+  resultFormat* results = (resultFormat*) results_void;
+
+  for (int i = 0; i < num_matches; i++) {
+    shared_ptr<Name> fuzzyName = make_shared<Name>(interest.getName().getPrefix(fuzzy_comp_index));
+    fuzzyName->append(results->resultsArray[i].resultValue);
+    const Name& prefix = *fuzzyName;
+    // bool isRightmost = interest.getChildSelector() == 1;
+    // NFD_LOG_DEBUG("find " << prefix << (isRightmost ? " R" : " L"));
+
+    first = m_table.lower_bound(prefix);
+    last = m_table.end();
+    if (prefix.size() > 0) {
+      last = m_table.lower_bound(prefix.getSuccessor());
+    }
+
+    iterator match = last;
+    if (isRightmost) {
+      match = this->findRightmost(interest, first, last);
+    }
+    else {
+      match = this->findLeftmost(interest, first, last);
+    }
+
+    if (match == last) {
+      NFD_LOG_DEBUG("  no-match for name: " << prefix);
+      continue;
+    }
+    NFD_LOG_DEBUG("  matching " << match->getName());
+    m_policy->beforeUse(match);
+    if (matchIndex != -1) {
+      char word[100];
+      strcpy(word, match->getData().getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+      float newMatchDistance = distance_2words((initStruct*)initStruct_void, word, results->resultsArray[matchIndex].resultValue);
+      if (newMatchDistance > results->similarity[matchIndex]) {
+          NFD_LOG_DEBUG("Match has similarity of " << newMatchDistance << " greater than " << results->similarity[matchIndex]);
+          hitCallback(interest, match->getData());
+          return true;
+      }
+    }
+  }
+  missCallback(interest);
+  return false;
 }
 
 iterator

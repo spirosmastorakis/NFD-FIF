@@ -93,6 +93,17 @@ public:
             const HitCallback& hitCallback,
             const MissCallback& missCallback) const;
 
+
+  bool
+  fuzzyFindRetry(const Interest& interest,
+                 const int& num_matches,
+                 int fuzzy_comp_index,
+                 void* results_void,
+                 int matchIndex,
+                 void* initStruct_void,
+                 const HitCallback& hitCallback,
+                 const MissCallback& missCallback) const;
+
   void
   erase(const Name& exactName)
   {

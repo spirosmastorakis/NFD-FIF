@@ -159,7 +159,7 @@ Strategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
 }
 
 void
-Strategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches)
+Strategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool waitAndFwd, float waitTime)
 {
   NFD_LOG_DEBUG("beforeCSLookup interest name=" << interest.getName());
   fuzzyMatches = -1;

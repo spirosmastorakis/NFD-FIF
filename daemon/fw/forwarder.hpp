@@ -109,6 +109,34 @@ public: // faces and policies
   struct initStruct initStruct;
   resultFormat results;
 
+  bool
+  doFuzzyCSLookup(const Face& inFace, const Interest& interest, shared_ptr<pit::Entry> pitEntry, resultFormat resultsCopy, int matchIndex)
+  {
+    // for (int i = 0; i < resultsCopy.nResultsToReturn; i++) {
+    //   std::cerr << "In Fuzzy CS Lookup, Result " << i << " is " << resultsCopy.resultsArray[i].resultValue << std::endl;
+    // }
+    // Point to the right PIT entry or create a new one if previous has expired
+    pitEntry = m_pit.insert(interest).first;
+
+    return m_cs.fuzzyFindRetry(interest, resultsCopy.nResultsToReturn, COMP_INDEX_FUZZY, (void*)&resultsCopy, matchIndex, (void*)&initStruct,
+                  bind(&Forwarder::onRetryContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
+                  bind(&Forwarder::onRetryContentStoreMiss, this, ref(inFace), pitEntry, _1));
+  }
+
+  void
+  onRetryContentStoreHit(const Face& inFace, const shared_ptr<pit::Entry>& pitEntry,
+                         const Interest& interest, const Data& data)
+  {
+    this->onContentStoreHit(inFace, pitEntry, interest, data);
+  }
+
+  void
+  onRetryContentStoreMiss(const Face& inFace, const shared_ptr<pit::Entry>& pitEntry,
+                          const Interest& interest)
+  {
+    return;
+  }
+
 public: // forwarding entrypoints and tables
   /** \brief start incoming Interest processing
    *  \param face face on which Interest is received
@@ -193,6 +221,13 @@ public: // allow enabling ndnSIM content store (will be removed in the future)
   setCsFromNdnSim(ns3::Ptr<ns3::ndn::ContentStore> cs)
   {
     m_csFromNdnSim = cs;
+  }
+
+  void
+  enableFwdAndWait(float waitTime)
+  {
+    m_waitAndFwd = true;
+    m_waitTime = waitTime;
   }
 
 public:
@@ -328,6 +363,8 @@ private:
   ns3::Ptr<ns3::ndn::ContentStore> m_csFromNdnSim;
 
   int m_fuzzyMatches;
+  bool m_waitAndFwd;
+  float m_waitTime;
 
   // allow Strategy (base class) to enter pipelines
   friend class fw::Strategy;

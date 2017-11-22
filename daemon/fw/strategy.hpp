@@ -184,7 +184,7 @@ public: // triggers
                    const shared_ptr<pit::Entry>& pitEntry);
 
   virtual void
-  beforeCSLookup(const Interest& interest, int& fuzzyMatches);
+  beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool waitAndFwd, float waitTime);
 
 protected: // actions
   /** \brief send Interest to outFace

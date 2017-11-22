@@ -44,6 +44,7 @@ FuzzyStrategy::FuzzyStrategy(Forwarder& forwarder, const Name& name)
   , m_retxSuppression(RETX_SUPPRESSION_INITIAL,
                       RetxSuppressionExponential::DEFAULT_MULTIPLIER,
                       RETX_SUPPRESSION_MAX)
+  , m_waitAndFwd(false)
 {
   ParsedInstanceName parsed = parseInstanceName(name);
   if (!parsed.parameters.empty()) {
@@ -57,6 +58,7 @@ FuzzyStrategy::FuzzyStrategy(Forwarder& forwarder, const Name& name)
 
   prepare_model(filename, (void*)&m_forwarder.initStruct);
   num_matches = 0;
+  pendingInterestIndex = 0;
 }
 
 const Name&
@@ -129,6 +131,7 @@ void
 FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
                                     const shared_ptr<pit::Entry>& pitEntry)
 {
+  NFD_LOG_DEBUG(interest << " in afterReceiveInterest");
   RetxSuppressionResult suppression = m_retxSuppression.decidePerPitEntry(*pitEntry);
   if (suppression == RetxSuppressionResult::SUPPRESS) {
     NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
@@ -154,7 +157,7 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
   }
 
   if (!interest.getForwardingHint().empty())
-    beforeCSLookup(interest, num_matches);
+    beforeCSLookup(interest, num_matches, m_waitAndFwd, m_waitTime);
 
   bool resultFound = false;
 
@@ -178,6 +181,21 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
 
       if (it == nexthops.end()) {
         continue;
+      }
+
+      if (interest.getForwardingHint().empty() && m_waitAndFwd) {
+        int waitTime = m_waitTime * 1000;
+        NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " initial match -- Retrying in " << waitTime << " ms");
+        resultFormat resultsCopy;
+        resultsCopy.nResultsToReturn = num_matches;
+        for (int j = 0; j < num_matches; j++) {
+          strcpy(resultsCopy.resultsArray[j].resultValue, m_forwarder.results.resultsArray[j].resultValue);
+          resultsCopy.similarity[j] = m_forwarder.results.similarity[j];
+          NFD_LOG_DEBUG("Result " << j << " is " << m_forwarder.results.resultsArray[j].resultValue);
+        }
+        m_pendingInterests.push_back(interest);
+        scheduler::schedule(time::milliseconds(waitTime), bind(&FuzzyStrategy::retrySendingInterest, this, ref(inFace), ref(interest), pitEntry, resultsCopy, i));
+        return;
       }
 
       resultFound = true;
@@ -219,6 +237,20 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
     }
   }
 
+  if (m_waitAndFwd) {
+      int waitTime = m_waitTime * 1000;
+      NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " noNextHop -- Retrying in " << waitTime << " ms");
+      resultFormat resultsCopy;
+      resultsCopy.nResultsToReturn = num_matches;
+      for (int i = 0; i < num_matches; i++) {
+        strcpy(resultsCopy.resultsArray[i].resultValue, m_forwarder.results.resultsArray[i].resultValue);
+        NFD_LOG_DEBUG("Result " << i << " is " << m_forwarder.results.resultsArray[i].resultValue);
+      }
+      m_pendingInterests.push_back(interest);
+      scheduler::schedule(time::milliseconds(waitTime), bind(&FuzzyStrategy::retrySendingInterest, this, ref(inFace), ref(interest), pitEntry, resultsCopy, -1));
+      return;
+  }
+
   NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " noNextHop");
 
   lp::NackHeader nackHeader;
@@ -236,17 +268,73 @@ FuzzyStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
 }
 
 void
-FuzzyStrategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches)
+FuzzyStrategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool waitAndFwd, float waitTime)
 {
   NFD_LOG_DEBUG("beforeCSLookup interest name=" << interest.getName());
   strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
   // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
   num_matches = distance_no_open((void*)&m_forwarder.initStruct, word, (void*)&m_forwarder.results, THRESHOLD);
   fuzzyMatches = num_matches;
+  m_waitAndFwd = waitAndFwd;
+  m_waitTime = waitTime;
   // std::cerr << "Interest name " << interest.getName().toUri() << std::endl;
   // std::cerr << "Num_matches " << num_matches << std::endl;
   // for (int i = 0; i < num_matches; i++)
   //   std::cerr << "Fuzzy Prefix " << results.resultsArray[i].resultValue << std::endl;
+}
+
+void
+FuzzyStrategy::retrySendingInterest(const Face& inFace, const Interest& interest,
+                                    const shared_ptr<pit::Entry>& pitEntry, resultFormat resultsCopy,
+                                    int matchIndex)
+{
+  shared_ptr<Interest> i = make_shared<Interest>(m_pendingInterests.front());
+
+  NFD_LOG_DEBUG(*i << " Retrying fuzzy CS lookup");
+
+  bool csHit = m_forwarder.doFuzzyCSLookup(inFace, *i, pitEntry, resultsCopy, matchIndex);
+
+  if (!csHit) {
+    if (matchIndex == -1) {
+      NFD_LOG_DEBUG(*i << " Failed again fuzzy CS lookup");
+      lp::NackHeader nackHeader;
+      nackHeader.setReason(lp::NackReason::NO_ROUTE);
+      this->sendNack(pitEntry, inFace, nackHeader);
+
+      this->rejectPendingInterest(pitEntry);
+    }
+    else {
+      NFD_LOG_DEBUG(*i << " Failed fuzzy CS lookup, sending initial match out");
+      shared_ptr<Name> fuzzyName = make_shared<Name>(i->getName().getPrefix(COMP_INDEX_FUZZY));
+      fuzzyName->append(resultsCopy.resultsArray[matchIndex].resultValue);
+      for (int j = COMP_INDEX_FUZZY + 1; j < i->getName().size(); j++) {
+        fuzzyName->append(i->getName().get(j));
+      }
+      NFD_LOG_DEBUG("Fuzzy Matching for name " << *fuzzyName);
+      const fib::Entry& fibEntry = this->lookupFib(*pitEntry, fuzzyName);
+      const fib::NextHopList& nexthops = fibEntry.getNextHops();
+      fib::NextHopList::const_iterator it = nexthops.end();
+
+      it = std::find_if(nexthops.begin(), nexthops.end(),
+        bind(&isNextHopEligible, cref(inFace), *i, _1, pitEntry,
+             false, time::steady_clock::TimePoint::min()));
+
+      Face& outFace = it->getFace();
+      Delegation del;
+      del.name = Name(*fuzzyName);
+      del.preference = 1;
+      DelegationList list({del});
+      const_cast<Interest&>(*i).setForwardingHint(list);
+      this->sendInterest(pitEntry, outFace, *i);
+      NFD_LOG_DEBUG(*i << " from=" << inFace.getId()
+                             << " newPitEntry-to=" << outFace.getId());
+    }
+  }
+  else {
+    NFD_LOG_DEBUG(*i << " Found match after fuzzy CS lookup");
+  }
+  pendingInterestIndex++;
+  m_pendingInterests.erase(m_pendingInterests.begin());
 }
 
 } // namespace fw

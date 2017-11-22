@@ -55,6 +55,8 @@ Forwarder::Forwarder()
   , m_strategyChoice(*this)
   , m_csFace(face::makeNullFace(FaceUri("contentstore://")))
   , m_fuzzyMatches(std::numeric_limits<int>::min())
+  , m_waitAndFwd(false)
+  , m_waitTime(0.2)
 {
   //NFD_LOG_DEBUG(TF_Version());
   getFaceTable().addReserved(m_csFace, face::FACEID_CONTENT_STORE);
@@ -152,7 +154,7 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
       else {
         // dispatch to strategy: before CS lookup
         this->dispatchToStrategy(*pitEntry,
-          [&] (fw::Strategy& strategy) { strategy.beforeCSLookup(interest, m_fuzzyMatches); });
+          [&] (fw::Strategy& strategy) { strategy.beforeCSLookup(interest, m_fuzzyMatches, m_waitAndFwd, m_waitTime); });
         if (m_fuzzyMatches == -1)
           m_cs.find(interest,
                     bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),

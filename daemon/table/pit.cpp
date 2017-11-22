@@ -104,7 +104,8 @@ void
 Pit::erase(Entry* entry, bool canDeleteNte)
 {
   name_tree::Entry* nte = m_nameTree.getEntry(*entry);
-  BOOST_ASSERT(nte != nullptr);
+  if (nte == nullptr)
+    return;
 
   nte->erasePitEntry(entry);
   if (canDeleteNte) {

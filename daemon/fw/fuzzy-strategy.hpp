@@ -69,7 +69,20 @@ public:
                    const shared_ptr<pit::Entry>& pitEntry) override;
 
   virtual void
-  beforeCSLookup(const Interest& interest, int& fuzzyMatches) override;
+  beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool waitAndFwd, float waitTime) override;
+
+private:
+  bool m_waitAndFwd;
+  float m_waitTime;
+
+  void
+  retrySendingInterest(const Face& inFace, const Interest& interest,
+                       const shared_ptr<pit::Entry>& pitEntry, resultFormat resultsCopy,
+                       int matchIndex = -1);
+
+  std::vector<Interest> m_pendingInterests;
+
+  int pendingInterestIndex;
 
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   static const time::milliseconds RETX_SUPPRESSION_INITIAL;
