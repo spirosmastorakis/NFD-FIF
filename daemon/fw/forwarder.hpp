@@ -108,6 +108,7 @@ public: // faces and policies
 
   struct initStruct initStruct;
   resultFormat results;
+  int remaining_budget;
 
   bool
   doFuzzyCSLookup(const Face& inFace, const Interest& interest, shared_ptr<pit::Entry> pitEntry, resultFormat resultsCopy, int matchIndex)
@@ -118,9 +119,23 @@ public: // faces and policies
     // Point to the right PIT entry or create a new one if previous has expired
     pitEntry = m_pit.insert(interest).first;
 
-    return m_cs.fuzzyFindRetry(interest, resultsCopy.nResultsToReturn, COMP_INDEX_FUZZY, (void*)&resultsCopy, matchIndex, (void*)&initStruct,
-                  bind(&Forwarder::onRetryContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
-                  bind(&Forwarder::onRetryContentStoreMiss, this, ref(inFace), pitEntry, _1));
+    // return m_cs.fuzzyFindRetry(interest, resultsCopy.nResultsToReturn, COMP_INDEX_FUZZY, (void*)&resultsCopy, matchIndex, (void*)&initStruct,
+    //               bind(&Forwarder::onRetryContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
+    //               bind(&Forwarder::onRetryContentStoreMiss, this, ref(inFace), pitEntry, _1));
+
+    auto it = m_cs.begin();
+    remaining_budget = TOTAL_BUDGET - m_cs.size();
+    float similarity = 0;
+    for (it; it != m_cs.end(); it++) {
+      similarity = distance_2words((void*)&initStruct, it->getName().toUri().c_str(),
+                                  interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+      if (similarity >= THRESHOLD) {
+        this->onRetryContentStoreHit(inFace, pitEntry, interest, it->getData());
+        return true;
+      }
+    }
+    this->onRetryContentStoreMiss(inFace, pitEntry, interest);
+    return false;
   }
 
   void

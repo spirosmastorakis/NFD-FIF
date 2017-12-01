@@ -161,9 +161,21 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
                     bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
         else
           //fuzzy CS lookup
-          m_cs.fuzzyFind(interest, m_fuzzyMatches, COMP_INDEX_FUZZY, (void*)&results,
-                    bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
-                    bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
+          // m_cs.fuzzyFind(interest, m_fuzzyMatches, COMP_INDEX_FUZZY, (void*)&results,
+          //           bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
+          //           bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
+          auto it = m_cs.begin();
+          remaining_budget = TOTAL_BUDGET - m_cs.size();
+          float similarity = 0;
+          for (it; it != m_cs.end(); it++) {
+            similarity = distance_2words((void*)&initStruct, it->getName().toUri().c_str(),
+                                        interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+            if (similarity >= THRESHOLD) {
+              this->onContentStoreHit(inFace, pitEntry, interest, it->getData());
+              break;
+            }
+          }
+          this->onContentStoreMiss(inFace, pitEntry, interest);
       }
     }
     else {

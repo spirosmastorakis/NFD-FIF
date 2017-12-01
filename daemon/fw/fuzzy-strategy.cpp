@@ -157,8 +157,8 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
     return;
   }
 
-  if (!interest.getForwardingHint().empty())
-    beforeCSLookup(interest, num_matches, m_waitAndFwd, m_waitTime);
+  // if (!interest.getForwardingHint().empty())
+  //   beforeCSLookup(interest, num_matches, m_waitAndFwd, m_waitTime);
 
   bool resultFound = false;
 
@@ -271,11 +271,11 @@ FuzzyStrategy::afterReceiveNack(const Face& inFace, const lp::Nack& nack,
 void
 FuzzyStrategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool waitAndFwd, float waitTime)
 {
-  NFD_LOG_DEBUG("beforeCSLookup interest name=" << interest.getName());
-  strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
-  // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
-  num_matches = distance_no_open((void*)&m_forwarder.initStruct, word, (void*)&m_forwarder.results, THRESHOLD);
-  fuzzyMatches = num_matches;
+  // NFD_LOG_DEBUG("beforeCSLookup interest name=" << interest.getName());
+  // strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+  // // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
+  // num_matches = distance_no_open((void*)&m_forwarder.initStruct, word, (void*)&m_forwarder.results, THRESHOLD);
+  // fuzzyMatches = num_matches;
   m_waitAndFwd = waitAndFwd;
   m_waitTime = waitTime;
   // std::cerr << "Interest name " << interest.getName().toUri() << std::endl;
