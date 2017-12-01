@@ -81,6 +81,7 @@ private:
                        int matchIndex = -1);
 
   std::vector<Interest> m_pendingInterests;
+  int satisfiedInterestsWaitFwd;
 
   int pendingInterestIndex;
 

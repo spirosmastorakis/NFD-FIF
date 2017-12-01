@@ -59,6 +59,7 @@ FuzzyStrategy::FuzzyStrategy(Forwarder& forwarder, const Name& name)
   prepare_model(filename, (void*)&m_forwarder.initStruct);
   num_matches = 0;
   pendingInterestIndex = 0;
+  satisfiedInterestsWaitFwd = 0;
 }
 
 const Name&
@@ -332,6 +333,8 @@ FuzzyStrategy::retrySendingInterest(const Face& inFace, const Interest& interest
   }
   else {
     NFD_LOG_DEBUG(*i << " Found match after fuzzy CS lookup");
+    satisfiedInterestsWaitFwd++;
+    std::cerr << "CS matches after waiting: " << satisfiedInterestsWaitFwd << std::endl;
   }
   pendingInterestIndex++;
   m_pendingInterests.erase(m_pendingInterests.begin());
