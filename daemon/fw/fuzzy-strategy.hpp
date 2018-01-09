@@ -77,8 +77,8 @@ private:
 
   void
   retrySendingInterest(const Face& inFace, const Interest& interest,
-                       const shared_ptr<pit::Entry>& pitEntry, resultFormat resultsCopy,
-                       int matchIndex = -1);
+                       const shared_ptr<pit::Entry>& pitEntry,
+                       float similarity, const Name previousMatch = Name(""));
 
   std::vector<Interest> m_pendingInterests;
   int satisfiedInterestsWaitFwd;

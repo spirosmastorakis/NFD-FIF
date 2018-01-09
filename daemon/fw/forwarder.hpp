@@ -42,6 +42,8 @@
 #include "ns3/ndnSIM/model/cs/ndn-content-store.hpp"
 #include "ns3/ndnSIM/model/ndn-fuzzy-common.hpp"
 
+#include "distance_lib.h"
+
 namespace nfd {
 
 namespace fw {
@@ -111,7 +113,7 @@ public: // faces and policies
   int remaining_budget;
 
   bool
-  doFuzzyCSLookup(const Face& inFace, const Interest& interest, shared_ptr<pit::Entry> pitEntry, resultFormat resultsCopy, int matchIndex)
+  doFuzzyCSLookup(const Face& inFace, const Interest& interest, shared_ptr<pit::Entry> pitEntry, float previousSimilarity)
   {
     // for (int i = 0; i < resultsCopy.nResultsToReturn; i++) {
     //   std::cerr << "In Fuzzy CS Lookup, Result " << i << " is " << resultsCopy.resultsArray[i].resultValue << std::endl;
@@ -124,16 +126,29 @@ public: // faces and policies
     //               bind(&Forwarder::onRetryContentStoreMiss, this, ref(inFace), pitEntry, _1));
 
     auto it = m_cs.begin();
-    remaining_budget = TOTAL_BUDGET - m_cs.size();
+    // remaining_budget = TOTAL_BUDGET - m_cs.size();
     float similarity = 0;
-    for (it; it != m_cs.end(); it++) {
-      similarity = distance_2words((void*)&initStruct, it->getName().toUri().c_str(),
-                                  interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
-      if (similarity >= THRESHOLD) {
+    char word1[100];
+    char word2[100];
+    strcpy(word2, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+    for (; it != m_cs.end(); it++) {
+      //std::cerr << "In Loop\n";
+      strcpy(word1, it->getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+      if (!Name(it->getName().get(0).toUri()).isPrefixOf(interest.getName()))
+        continue;
+      // std::cerr << "Word1: " << word1 << std::endl;
+      // std::cerr << "After strcpy\n";
+      similarity = distance_2words((void*)&initStruct, word1, word2);
+      // std::cerr << "After library call\n";
+      if ((similarity >= THRESHOLD) && (similarity >= previousSimilarity)) {
+        // std::cerr << "In CS hit\n";
+        // std::cerr << "CS Match Found after waiting. Word1: " << word1 << " .Word 2: " << word2 << " .Similarity: " << similarity << " .Previous similarity: " <<  previousSimilarity << std::endl;
         this->onRetryContentStoreHit(inFace, pitEntry, interest, it->getData());
+        // std::cerr << "After onRetryContentStoreHit\n";
         return true;
       }
     }
+    // std::cerr << "In CS miss\n";
     this->onRetryContentStoreMiss(inFace, pitEntry, interest);
     return false;
   }

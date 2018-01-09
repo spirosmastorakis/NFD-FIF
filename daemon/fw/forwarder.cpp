@@ -159,23 +159,42 @@ Forwarder::onIncomingInterest(Face& inFace, const Interest& interest)
           m_cs.find(interest,
                     bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
                     bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
-        else
+        else {
           //fuzzy CS lookup
           // m_cs.fuzzyFind(interest, m_fuzzyMatches, COMP_INDEX_FUZZY, (void*)&results,
           //           bind(&Forwarder::onContentStoreHit, this, ref(inFace), pitEntry, _1, _2),
           //           bind(&Forwarder::onContentStoreMiss, this, ref(inFace), pitEntry, _1));
           auto it = m_cs.begin();
-          remaining_budget = TOTAL_BUDGET - m_cs.size();
+          // remaining_budget = TOTAL_BUDGET - m_cs.size();
           float similarity = 0;
+          char word1[100];
+          char word2[100];
+          strcpy(word2, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+          int lookups = 0;
           for (it; it != m_cs.end(); it++) {
-            similarity = distance_2words((void*)&initStruct, it->getName().toUri().c_str(),
-                                        interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
-            if (similarity >= THRESHOLD) {
-              this->onContentStoreHit(inFace, pitEntry, interest, it->getData());
+            //std::cerr << "IN fuzzy CS lookup\n";
+            if (lookups == CS_LOOKUPS) {
               break;
             }
+            // std::cerr << "iter->getName().get(0).toUri(): " << it->getName().get(0).toUri() << std::endl;
+            // std::cerr << "interest.getName(): " << interest.getName() << std::endl;
+            // std::cerr << "Name(iter->getName().get(0).toUri()).isPrefixOf(interest.getName()): " << Name(it->getName().get(0).toUri()).isPrefixOf(interest.getName()) << std::endl;
+            if (!Name(it->getName().get(0).toUri()).isPrefixOf(interest.getName()))
+              continue;
+            strcpy(word1, it->getName().get(COMP_INDEX_FUZZY).toUri().c_str());
+            // std::cerr << "Word1: " << word1 << std::endl;
+            similarity = distance_2words((void*)&initStruct, word1, word2);
+            if (similarity >= THRESHOLD) {
+              // std::cerr << "CS Match Found. Word1: " << word1 << " .Word 2: " << word2 << " .Similarity: " << similarity << std::endl;
+              this->onContentStoreHit(inFace, pitEntry, interest, it->getData());
+              if (ns3::Simulator::Now().GetSeconds() >= 10)
+                std::cerr << word2 << " " << word1 << std::endl;
+              return;
+            }
+            lookups++;
           }
           this->onContentStoreMiss(inFace, pitEntry, interest);
+        }
       }
     }
     else {

@@ -28,6 +28,10 @@
 #include "core/logger.hpp"
 
 #include "ns3/ndnSIM/model/ndn-fuzzy-common.hpp"
+#include "ns3/ndnSIM/model/ndn-l3-protocol.hpp"
+
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
 
 namespace nfd {
 namespace fw {
@@ -140,6 +144,8 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
     return;
   }
 
+  char word2[100];
+  strcpy(word2, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
   // try exact match first
   const fib::Entry& exactFibEntry = this->lookupFib(*pitEntry, nullptr);
   const fib::NextHopList& exactNexthops = exactFibEntry.getNextHops();
@@ -151,6 +157,7 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
 
   if (exactIt != exactNexthops.end()) {
     Face& outFace = exactIt->getFace();
+    // std::cerr << word2 << " " << word2 << std::endl;
     this->sendInterest(pitEntry, outFace, interest);
     NFD_LOG_DEBUG(interest << " from=" << inFace.getId()
                            << " exact match with newPitEntry-to=" << outFace.getId());
@@ -159,19 +166,40 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
 
   // if (!interest.getForwardingHint().empty())
   //   beforeCSLookup(interest, num_matches, m_waitAndFwd, m_waitTime);
-
+  char word1[100];
   bool resultFound = false;
-
-  for (int i = 0; i < num_matches; i++) {
+  auto iter = m_forwarder.getFib().begin();
+  int counter = 0;
+  for (; iter != m_forwarder.getFib().end(); iter++) {
+  //for (int i = 0; i < (TOTAL_BUDGET - m_forwarder.getCs().size() - 100) && (iter != m_forwarder.getFib().end()); i++, iter++) {
     // prepare name to be fuzzy matched
+    if (counter >= FIB_LOOKUPS)
+      break;
+
+    // std::cerr << "iter->getName().get(0).toUri(): " << iter->getPrefix().get(0).toUri() << std::endl;
+    // std::cerr << "interest.getName(): " << interest.getName() << std::endl;
+    // std::cerr << "Name(iter->getName().get(0).toUri()).isPrefixOf(interest.getName()): " << Name(iter->getPrefix().get(0).toUri()).isPrefixOf(interest.getName()) << std::endl;
+    if (!Name(iter->getPrefix().get(0).toUri()).isPrefixOf(interest.getName()))
+      continue;
+
+    counter++;
+
     shared_ptr<Name> fuzzyName = make_shared<Name>(interest.getName().getPrefix(COMP_INDEX_FUZZY));
-    fuzzyName->append(m_forwarder.results.resultsArray[i].resultValue);
+    fuzzyName->append(iter->getPrefix().get(COMP_INDEX_FUZZY));
     for (int j = COMP_INDEX_FUZZY + 1; j < interest.getName().size(); j++) {
       fuzzyName->append(interest.getName().get(j));
     }
-    NFD_LOG_DEBUG("Fuzzy Matching for name " << *fuzzyName);
-    const fib::Entry& fibEntry = this->lookupFib(*pitEntry, fuzzyName);
-    const fib::NextHopList& nexthops = fibEntry.getNextHops();
+    // NFD_LOG_DEBUG("Fuzzy Matching for name " << *fuzzyName);
+
+    //const fib::Entry& fibEntry = this->lookupFib(*pitEntry, fuzzyName);
+    strcpy(word1, iter->getPrefix().get(COMP_INDEX_FUZZY).toUri().c_str());
+    float similarity = distance_2words((void*)&(m_forwarder.initStruct), word1, word2);
+
+    if (similarity <= THRESHOLD)
+      continue;
+
+    // std::cerr << "FIB Match Found. Word1: " << word1 << " .Word 2: " << word2 << " .Similarity: " << similarity << std::endl;
+    const fib::NextHopList& nexthops = iter->getNextHops();
     fib::NextHopList::const_iterator it = nexthops.end();
 
     if (suppression == RetxSuppressionResult::NEW) {
@@ -184,18 +212,22 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
         continue;
       }
 
+      // if (ns3::Simulator::Now().GetSeconds() >= 10)
+      //   std::cerr << word2 << " " << word1 << std::endl;
+
       if (interest.getForwardingHint().empty() && m_waitAndFwd) {
         int waitTime = m_waitTime * 1000;
         NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " initial match -- Retrying in " << waitTime << " ms");
-        resultFormat resultsCopy;
-        resultsCopy.nResultsToReturn = num_matches;
-        for (int j = 0; j < num_matches; j++) {
-          strcpy(resultsCopy.resultsArray[j].resultValue, m_forwarder.results.resultsArray[j].resultValue);
-          resultsCopy.similarity[j] = m_forwarder.results.similarity[j];
-          NFD_LOG_DEBUG("Result " << j << " is " << m_forwarder.results.resultsArray[j].resultValue);
-        }
+        // resultFormat resultsCopy;
+        // resultsCopy.nResultsToReturn = num_matches;
+        // for (int j = 0; j < num_matches; j++) {
+        //   strcpy(resultsCopy.resultsArray[j].resultValue, m_forwarder.results.resultsArray[j].resultValue);
+        //   resultsCopy.similarity[j] = m_forwarder.results.similarity[j];
+        //   NFD_LOG_DEBUG("Result " << j << " is " << m_forwarder.results.resultsArray[j].resultValue);
+        // }
         m_pendingInterests.push_back(interest);
-        scheduler::schedule(time::milliseconds(waitTime), bind(&FuzzyStrategy::retrySendingInterest, this, ref(inFace), ref(interest), pitEntry, resultsCopy, i));
+        Name component = Name(iter->getPrefix().get(COMP_INDEX_FUZZY).toUri());
+        scheduler::schedule(time::milliseconds(waitTime), bind(&FuzzyStrategy::retrySendingInterest, this, ref(inFace), ref(interest), pitEntry, similarity, component));
         return;
       }
 
@@ -239,16 +271,11 @@ FuzzyStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest
   }
 
   if (m_waitAndFwd) {
+      Name emptyName;
       int waitTime = m_waitTime * 1000;
       NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " noNextHop -- Retrying in " << waitTime << " ms");
-      resultFormat resultsCopy;
-      resultsCopy.nResultsToReturn = num_matches;
-      for (int i = 0; i < num_matches; i++) {
-        strcpy(resultsCopy.resultsArray[i].resultValue, m_forwarder.results.resultsArray[i].resultValue);
-        NFD_LOG_DEBUG("Result " << i << " is " << m_forwarder.results.resultsArray[i].resultValue);
-      }
       m_pendingInterests.push_back(interest);
-      scheduler::schedule(time::milliseconds(waitTime), bind(&FuzzyStrategy::retrySendingInterest, this, ref(inFace), ref(interest), pitEntry, resultsCopy, -1));
+      scheduler::schedule(time::milliseconds(waitTime), bind(&FuzzyStrategy::retrySendingInterest, this, ref(inFace), ref(interest), pitEntry, -1, emptyName));
       return;
   }
 
@@ -275,7 +302,7 @@ FuzzyStrategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool 
   // strcpy(word, interest.getName().get(COMP_INDEX_FUZZY).toUri().c_str());
   // // NFD_LOG_DEBUG("Fuzzy Matching for component " << word);
   // num_matches = distance_no_open((void*)&m_forwarder.initStruct, word, (void*)&m_forwarder.results, THRESHOLD);
-  // fuzzyMatches = num_matches;
+  fuzzyMatches = 0;
   m_waitAndFwd = waitAndFwd;
   m_waitTime = waitTime;
   // std::cerr << "Interest name " << interest.getName().toUri() << std::endl;
@@ -286,17 +313,17 @@ FuzzyStrategy::beforeCSLookup(const Interest& interest, int& fuzzyMatches, bool 
 
 void
 FuzzyStrategy::retrySendingInterest(const Face& inFace, const Interest& interest,
-                                    const shared_ptr<pit::Entry>& pitEntry, resultFormat resultsCopy,
-                                    int matchIndex)
+                                    const shared_ptr<pit::Entry>& pitEntry, float similarity,
+                                    const Name previousMatch)
 {
   shared_ptr<Interest> i = make_shared<Interest>(m_pendingInterests.front());
 
   NFD_LOG_DEBUG(*i << " Retrying fuzzy CS lookup");
 
-  bool csHit = m_forwarder.doFuzzyCSLookup(inFace, *i, pitEntry, resultsCopy, matchIndex);
+  bool csHit = m_forwarder.doFuzzyCSLookup(inFace, *i, pitEntry, similarity);
 
   if (!csHit) {
-    if (matchIndex == -1) {
+    if (similarity == -1) {
       NFD_LOG_DEBUG(*i << " Failed again fuzzy CS lookup");
       lp::NackHeader nackHeader;
       nackHeader.setReason(lp::NackReason::NO_ROUTE);
@@ -307,7 +334,7 @@ FuzzyStrategy::retrySendingInterest(const Face& inFace, const Interest& interest
     else {
       NFD_LOG_DEBUG(*i << " Failed fuzzy CS lookup, sending initial match out");
       shared_ptr<Name> fuzzyName = make_shared<Name>(i->getName().getPrefix(COMP_INDEX_FUZZY));
-      fuzzyName->append(resultsCopy.resultsArray[matchIndex].resultValue);
+      fuzzyName->append(previousMatch);
       for (int j = COMP_INDEX_FUZZY + 1; j < i->getName().size(); j++) {
         fuzzyName->append(i->getName().get(j));
       }
@@ -333,8 +360,11 @@ FuzzyStrategy::retrySendingInterest(const Face& inFace, const Interest& interest
   }
   else {
     NFD_LOG_DEBUG(*i << " Found match after fuzzy CS lookup");
-    satisfiedInterestsWaitFwd++;
-    std::cerr << "CS matches after waiting: " << satisfiedInterestsWaitFwd << std::endl;
+    ns3::Ptr<ns3::Node> node = ns3::Names::Find<ns3::Node>("Denver");
+    if (&(*node->GetObject<ns3::ndn::L3Protocol>()->getForwarder()) == &m_forwarder && ns3::Simulator::Now().GetSeconds() >= 10) {
+      satisfiedInterestsWaitFwd++;
+      std::cerr << "CS matches after waiting: " << satisfiedInterestsWaitFwd << std::endl;
+    }
   }
   pendingInterestIndex++;
   m_pendingInterests.erase(m_pendingInterests.begin());
